@@ -42,6 +42,7 @@ Material:
     - _FrenelPower: 5
     - _QueueControl: 0
     - _QueueOffset: 0
+    - _XRMotionVectorsPass: 1
     m_Colors:
     - _FrenelColor: {r: 3.5050313, g: 1.1091871, b: 8.47419, a: 1}
   m_BuildTextureStacks: []

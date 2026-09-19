@@ -47,6 +47,7 @@ Material:
     - _QueueOffset: 0
     - _RotationAmount: -0.5
     - _TwirlStrength: 12.5
+    - _XRMotionVectorsPass: 1
     m_Colors:
     - _Color: {r: 150.04051, g: 0, b: 1245.9886, a: 1}
   m_BuildTextureStacks: []
