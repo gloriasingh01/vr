@@ -3,7 +3,32 @@ guid: 380595a7c71ce9c48b260fe2c1c6de6b
 ModelImporter:
   serializedVersion: 24600
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: MT01_DoorFront_Main
+    second: {fileID: 2100000, guid: 863e72bc5c14e6f4786bbbde3f131fc9, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: MT02_Door_Wall_Extern_Bon_3
+    second: {fileID: 2100000, guid: c9b3322dfdb5b494e9d06ab0a6594edf, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: MT03_DoorCenter
+    second: {fileID: 2100000, guid: 6b014b381de5f634383ee0c574b78eb1, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: MT04_ArcDoor_BuildCenter
+    second: {fileID: 2100000, guid: 18a380dce06e7f54ead105c62671248b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: MT05_Door_CenterBuild
+    second: {fileID: 2100000, guid: b571fc74c13d0b5498886841258cd97e, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
@@ -34,7 +59,7 @@ ModelImporter:
     isReadable: 0
   meshes:
     lODScreenPercentages: []
-    globalScale: 1
+    globalScale: 0.8
     meshCompression: 0
     addColliders: 0
     useSRGBMaterialColor: 1
@@ -97,7 +122,7 @@ ModelImporter:
     armStretch: 0.05
     legStretch: 0.05
     feetSpacing: 0
-    globalScale: 1
+    globalScale: 0.8
     rootMotionBoneName: 
     hasTranslationDoF: 0
     hasExtraRoot: 0
