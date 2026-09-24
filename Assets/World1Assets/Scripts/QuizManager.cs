@@ -33,6 +33,9 @@ public class QuizManager : MonoBehaviour
     private AudioSource _audio;
     private bool _answerAccepted;
 
+    [Header("Progression Portal")]
+    [SerializeField] private GameObject firstPortal;
+
     // ────────────────────────────────────────────────────────────────────────
     private void Awake()
     {
@@ -140,6 +143,7 @@ public class QuizManager : MonoBehaviour
 
         firstDoor.localPosition = end;
         Debug.Log("[QuizManager] Door opened.");
+        if (firstPortal != null) firstPortal.SetActive(true);
     }
 
 }
