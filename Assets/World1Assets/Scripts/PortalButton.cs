@@ -8,6 +8,7 @@ public class PortalButton : MonoBehaviour
 {
     [SerializeField] private Transform destination;
     [SerializeField] private GameObject portalVisual;
+    [SerializeField] private GameObject activateOnArrival;
 
     private Button button;
 
@@ -55,6 +56,9 @@ public class PortalButton : MonoBehaviour
             portalVisual.SetActive(false);
         else
             gameObject.SetActive(false);
+
+        if (activateOnArrival != null)
+            activateOnArrival.SetActive(true);
 
         Debug.Log("[PortalButton] Player moved to " + destination.name + ".");
     }
