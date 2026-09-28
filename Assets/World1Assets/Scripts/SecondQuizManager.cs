@@ -86,7 +86,6 @@ public class SecondQuizManager : MonoBehaviour
     private IEnumerator Complete(int index)
     {
         SetColor(index, Correct);
-        yield return new WaitForSeconds(0.9f);
 
         // ── Load scene if configured ──────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(sceneToLoadOnCorrect))
@@ -95,6 +94,8 @@ public class SecondQuizManager : MonoBehaviour
             SceneManager.LoadScene(sceneToLoadOnCorrect, LoadSceneMode.Single);
             yield break;
         }
+
+        yield return new WaitForSeconds(0.9f);
 
         // ── Open door FIRST (before hiding canvas) ───────────────────────────
         // IMPORTANT: questionCanvas.SetActive(false) must come AFTER the door

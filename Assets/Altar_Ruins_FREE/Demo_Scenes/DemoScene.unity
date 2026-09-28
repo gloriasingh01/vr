@@ -6398,7 +6398,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 404d8a702b47b564ea09b289acf00361, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ScenePortal
-  targetSceneName: World1
+  targetSceneName: Nexus_to_World1
 --- !u!1001 &1498325995
 PrefabInstance:
   m_ObjectHideFlags: 0
