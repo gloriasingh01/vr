@@ -3828,7 +3828,7 @@ MonoBehaviour:
   doorOpenOffset: {x: 0, y: 3, z: 0}
   doorOpeningDuration: 2
   portalToActivate: {fileID: 0}
-  sceneToLoadOnCorrect: Demo
+  sceneToLoadOnCorrect: World1_to_World2
   correctSound: {fileID: 8300000, guid: 1f7144a9ae5ca004ab7c60ce94c0cd72, type: 3}
   wrongSound: {fileID: 8300000, guid: 045db2079d36e234cbf5005b9b187998, type: 3}
   doorOpenSound: {fileID: 0}
