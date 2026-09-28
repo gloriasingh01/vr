@@ -10,6 +10,12 @@ public class ScenePortal : MonoBehaviour
 
     private bool isTransitioning = false;
 
+    public void SetTargetScene(string sceneName)
+    {
+        if (!string.IsNullOrWhiteSpace(sceneName))
+            targetSceneName = sceneName;
+    }
+
     // Called automatically by OnTriggerEnter OR by Teleport Anchor Events
     public void TriggerSceneLoad()
     {
