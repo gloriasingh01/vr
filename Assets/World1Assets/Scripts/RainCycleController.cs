@@ -12,14 +12,31 @@ public sealed class RainCycleController : MonoBehaviour
     [SerializeField, Min(1f)] private float heavyRainRate = 900f;
     [SerializeField, Range(0f, 1f)] private float finalRainStrength = 0.04f;
 
+    [Header("Rain Audio")]
+    [SerializeField] private AudioClip rainAudioClip;
+    [Tooltip("Maximum volume intensity for the rain audio (default 0.35 for reduced intensity).")]
+    [SerializeField, Range(0f, 1f)] private float volume = 0.35f;
+    [Tooltip("If true, audio volume will dynamically scale with rain intensity (heavy vs fade vs dry).")]
+    [SerializeField] private bool syncVolumeWithRain = true;
+
     private ParticleSystem _rain;
     private ParticleSystem.EmissionModule _emission;
+    private AudioSource _audio;
     private float _cycleTime;
 
     private void Awake()
     {
         _rain = GetComponent<ParticleSystem>();
         _emission = _rain.emission;
+
+        _audio = GetComponent<AudioSource>();
+        if (_audio == null)
+        {
+            _audio = gameObject.AddComponent<AudioSource>();
+            _audio.playOnAwake = false;
+            _audio.loop = true;
+            _audio.spatialBlend = 0f;
+        }
     }
 
     private void OnEnable()
@@ -27,6 +44,34 @@ public sealed class RainCycleController : MonoBehaviour
         _cycleTime = 0f;
         if (_rain != null)
             _rain.Play(true);
+
+        StartRainAudio();
+    }
+
+    private void Start()
+    {
+        if (_audio != null && !_audio.isPlaying && rainAudioClip != null)
+        {
+            StartRainAudio();
+        }
+    }
+
+    private void StartRainAudio()
+    {
+        if (rainAudioClip != null && _audio != null)
+        {
+            _audio.clip = rainAudioClip;
+            _audio.loop = true;
+            _audio.volume = volume;
+            if (!_audio.isPlaying)
+                _audio.Play();
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (_audio != null && _audio.isPlaying)
+            _audio.Stop();
     }
 
     private void Update()
@@ -53,5 +98,10 @@ public sealed class RainCycleController : MonoBehaviour
         }
 
         _emission.rateOverTime = heavyRainRate * strength;
+
+        if (_audio != null && _audio.isPlaying && syncVolumeWithRain)
+        {
+            _audio.volume = strength * volume;
+        }
     }
 }

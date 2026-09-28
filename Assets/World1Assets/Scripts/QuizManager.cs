@@ -25,6 +25,11 @@ public class QuizManager : MonoBehaviour
     [Header("Question Voice (optional)")]
     [SerializeField] private AudioClip firstQuestionVoice;
 
+    [Header("Sound Effects")]
+    [SerializeField] private AudioClip correctSound;
+    [SerializeField] private AudioClip wrongSound;
+    [SerializeField] private AudioClip doorOpenSound;
+
     // colours
     private static readonly Color NormalColor  = new Color(0.15f, 0.35f, 0.65f, 1f);
     private static readonly Color WrongColor   = new Color(0.70f, 0.12f, 0.12f, 1f);
@@ -40,7 +45,7 @@ public class QuizManager : MonoBehaviour
     private void Awake()
     {
         _audio = GetComponent<AudioSource>();
-        if (firstQuestionVoice != null && _audio == null)
+        if (_audio == null)
         {
             _audio = gameObject.AddComponent<AudioSource>();
             _audio.playOnAwake  = false;
@@ -76,6 +81,7 @@ public class QuizManager : MonoBehaviour
         if (index != correctAnswerIndex)
         {
             Debug.Log("[QuizManager] WRONG answer.");
+            if (wrongSound != null && _audio != null) _audio.PlayOneShot(wrongSound);
             StartCoroutine(FlashWrong(index));
             return;
         }
@@ -83,6 +89,7 @@ public class QuizManager : MonoBehaviour
         // ── Correct! ──
         _answerAccepted = true;
         Debug.Log("[QuizManager] CORRECT answer!");
+        if (correctSound != null && _audio != null) _audio.PlayOneShot(correctSound);
         StartCoroutine(CorrectSequence(index));
     }
 
@@ -127,6 +134,8 @@ public class QuizManager : MonoBehaviour
 
     private IEnumerator OpenDoor()
     {
+        if (doorOpenSound != null && _audio != null) _audio.PlayOneShot(doorOpenSound);
+
         Vector3 start   = firstDoor.localPosition;
         Vector3 end     = start + firstDoorOpenOffset;
         float   elapsed = 0f;
