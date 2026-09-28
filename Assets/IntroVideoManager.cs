@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Video;
 using UnityEngine.SceneManagement;
+using Unity.XR.CoreUtils;
 
 public class IntroVideoManager : MonoBehaviour
 {
@@ -27,18 +28,23 @@ public class IntroVideoManager : MonoBehaviour
 
         // Draw straight to the camera. This avoids depending on the RenderTexture
         // and RawImage chain, which previously failed to create its render target.
-        Camera introCamera = Camera.main;
+        XROrigin xrOrigin = FindFirstObjectByType<XROrigin>();
+        Camera introCamera = xrOrigin != null ? xrOrigin.Camera : null;
         if (introCamera == null)
         {
-            Debug.LogError("IntroVideoManager: no enabled MainCamera exists in the IntroVideo scene.", this);
+            Debug.LogError("IntroVideoManager: no camera is assigned to an active XR Origin in the IntroVideo scene.", this);
             return;
         }
+
+        // Place the monoscopic camera-plane video at a comfortable viewing distance in XR.
+        introCamera.nearClipPlane = 3f;
 
         videoPlayer.renderMode = VideoRenderMode.CameraNearPlane;
         videoPlayer.targetCamera = introCamera;
         videoPlayer.targetCameraAlpha = 1f;
         videoPlayer.targetTexture = null;
-        videoPlayer.aspectRatio = VideoAspectRatio.FitInside;
+        videoPlayer.aspectRatio = VideoAspectRatio.FitOutside;
+        videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
         videoPlayer.playOnAwake = false;
         videoPlayer.isLooping = false;
         videoPlayer.waitForFirstFrame = true;
@@ -52,6 +58,16 @@ public class IntroVideoManager : MonoBehaviour
 
     void StartVideo(VideoPlayer vp)
     {
+        if (vp.audioTrackCount == 0)
+            Debug.LogWarning("Intro video has no audio tracks available.", this);
+
+        for (ushort trackIndex = 0; trackIndex < vp.audioTrackCount; trackIndex++)
+        {
+            vp.EnableAudioTrack(trackIndex, true);
+            vp.SetDirectAudioMute(trackIndex, false);
+            vp.SetDirectAudioVolume(trackIndex, 1f);
+        }
+
         Debug.Log($"Intro video prepared ({vp.width}x{vp.height}); starting camera output.", this);
         vp.Play();
     }

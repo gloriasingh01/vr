@@ -30,12 +30,16 @@ public class ShootingGameManager : MonoBehaviour
     private bool gameOver;
     private int lives = StartingLives;
     private int monstersDefeated;
-    private Text statusText;
+    private TMP_Text statusText;
+    private TMP_Text timerText;
+    private TMP_Text killCountText;
+    private TMP_Text gameOverText;
+    private GameObject gameOverPanel;
     private GameObject winPortalObject;
     private ScenePortal winPortalScene;
     private XRSimpleInteractable winPortalInteractable;
     private Button winPortalButton;
-    private readonly List<Text> heartLabels = new List<Text>(StartingLives);
+    private readonly List<TMP_Text> heartLabels = new List<TMP_Text>(StartingLives);
     private readonly List<StoneMonsterEnemy> waveMonsters = new List<StoneMonsterEnemy>(MonsterCount);
     private readonly List<StoneMonsterEnemy> activeMonsters = new List<StoneMonsterEnemy>();
 
@@ -233,11 +237,13 @@ public class ShootingGameManager : MonoBehaviour
     {
         for (int seconds = StartDelaySeconds; seconds > 0; --seconds)
         {
-            SetStatus("Monsters arrive in " + seconds);
+            SetStatus("Get ready");
+            SetTimer("STARTS IN " + seconds);
             yield return new WaitForSeconds(1f);
         }
 
         roundStarted = true;
+        SetTimer("ROUND ACTIVE");
         UpdateProgress();
 
         for (int i = 0; i < MonsterCount && !gameOver; ++i)
@@ -254,55 +260,63 @@ public class ShootingGameManager : MonoBehaviour
             int waitSeconds = Mathf.CeilToInt(spawnInterval);
             for (int remaining = waitSeconds; remaining > 0 && !gameOver; --remaining)
             {
-                SetStatus("Monster " + (i + 2) + " arrives in " + remaining + "s  |  Defeated: " +
-                          monstersDefeated + " / " + MonsterCount);
+                SetTimer("NEXT MONSTER IN " + remaining + "s");
                 yield return new WaitForSeconds(1f);
             }
         }
+
+        if (!gameOver)
+            SetTimer("ROUND ACTIVE");
     }
 
     private void BuildHud()
     {
         GameObject canvasObject = new GameObject("Shooting HUD", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        if (playerCamera != null)
+        {
+            canvasObject.transform.SetParent(playerCamera.transform, false);
+            canvasObject.transform.localPosition = new Vector3(0f, 0f, 1.25f);
+            canvasObject.transform.localRotation = Quaternion.identity;
+        }
         Canvas canvas = canvasObject.GetComponent<Canvas>();
-        canvas.renderMode = playerCamera != null ? RenderMode.ScreenSpaceCamera : RenderMode.ScreenSpaceOverlay;
+        canvas.renderMode = RenderMode.WorldSpace;
         canvas.worldCamera = playerCamera;
-        canvas.planeDistance = 1.2f;
         canvas.sortingOrder = 100;
 
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.matchWidthOrHeight = 0.5f;
+        scaler.dynamicPixelsPerUnit = 10f;
 
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
+        canvasRect.sizeDelta = new Vector2(1600f, 900f);
+        canvasRect.localScale = Vector3.one * 0.00075f;
 
-        GameObject statusObject = new GameObject("Round Status", typeof(RectTransform), typeof(Text));
+        GameObject statusObject = new GameObject("Round Status", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         statusObject.transform.SetParent(canvas.transform, false);
         RectTransform statusRect = statusObject.GetComponent<RectTransform>();
-        statusRect.anchorMin = new Vector2(0.5f, 1f);
-        statusRect.anchorMax = new Vector2(0.5f, 1f);
-        statusRect.pivot = new Vector2(0.5f, 1f);
-        statusRect.anchoredPosition = new Vector2(0f, -28f);
-        statusRect.sizeDelta = new Vector2(900f, 90f);
-        statusText = statusObject.GetComponent<Text>();
-        statusText.font = font;
-        statusText.fontSize = 42;
-        statusText.alignment = TextAnchor.MiddleCenter;
-        statusText.color = Color.white;
-        statusText.horizontalOverflow = HorizontalWrapMode.Overflow;
-        statusText.verticalOverflow = VerticalWrapMode.Overflow;
-        statusText.raycastTarget = false;
-        AddTextShadow(statusText);
+        SetHudRect(statusRect, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -145f), new Vector2(1100f, 90f));
+        statusText = statusObject.GetComponent<TextMeshProUGUI>();
+        ConfigureHudText(statusText, 44f, TextAlignmentOptions.Center);
+        statusText.text = "Get ready";
 
+        GameObject timerObject = new GameObject("Round Timer", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        timerObject.transform.SetParent(canvas.transform, false);
+        SetHudRect(timerObject.GetComponent<RectTransform>(), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -48f), new Vector2(900f, 100f));
+        timerText = timerObject.GetComponent<TextMeshProUGUI>();
+        ConfigureHudText(timerText, 62f, TextAlignmentOptions.Center);
+        timerText.text = "STARTS IN 10";
+
+        GameObject killsObject = new GameObject("Kill Count", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        killsObject.transform.SetParent(canvas.transform, false);
+        SetHudRect(killsObject.GetComponent<RectTransform>(), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-32f, -48f), new Vector2(480f, 90f));
+        killCountText = killsObject.GetComponent<TextMeshProUGUI>();
+        ConfigureHudText(killCountText, 42f, TextAlignmentOptions.Right);
+        killCountText.text = "KILLS  0 / 8";
+
+        // Keep the life row comfortably above the bottom edge of the headset view.
         GameObject heartsObject = new GameObject("Lives", typeof(RectTransform), typeof(HorizontalLayoutGroup));
         heartsObject.transform.SetParent(canvas.transform, false);
         RectTransform heartsRect = heartsObject.GetComponent<RectTransform>();
-        heartsRect.anchorMin = new Vector2(0.5f, 0f);
-        heartsRect.anchorMax = new Vector2(0.5f, 0f);
-        heartsRect.pivot = new Vector2(0.5f, 0f);
-        heartsRect.anchoredPosition = new Vector2(0f, 26f);
-        heartsRect.sizeDelta = new Vector2(360f, 96f);
+        SetHudRect(heartsRect, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 50f), new Vector2(420f, 100f));
 
         HorizontalLayoutGroup layout = heartsObject.GetComponent<HorizontalLayoutGroup>();
         layout.childAlignment = TextAnchor.MiddleCenter;
@@ -314,30 +328,62 @@ public class ShootingGameManager : MonoBehaviour
 
         for (int i = 0; i < StartingLives; ++i)
         {
-            GameObject heartObject = new GameObject("Heart " + (i + 1), typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+            GameObject heartObject = new GameObject("Heart " + (i + 1), typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI), typeof(LayoutElement));
             heartObject.transform.SetParent(heartsObject.transform, false);
-            Text heart = heartObject.GetComponent<Text>();
-            heart.font = font;
-            heart.fontSize = 78;
-            heart.alignment = TextAnchor.MiddleCenter;
+            TMP_Text heart = heartObject.GetComponent<TextMeshProUGUI>();
+            ConfigureHudText(heart, 84f, TextAlignmentOptions.Center);
             heart.text = "♥";
             heart.color = new Color32(230, 34, 48, 255);
-            heart.raycastTarget = false;
             LayoutElement element = heartObject.GetComponent<LayoutElement>();
-            element.preferredWidth = 96f;
-            element.preferredHeight = 90f;
-            AddTextShadow(heart);
+            element.preferredWidth = 112f;
+            element.preferredHeight = 96f;
             heartLabels.Add(heart);
         }
 
+        GameObject panelObject = new GameObject("Game Over Panel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        panelObject.transform.SetParent(canvas.transform, false);
+        RectTransform panelRect = panelObject.GetComponent<RectTransform>();
+        SetHudRect(panelRect, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1000f, 300f));
+        panelObject.GetComponent<Image>().color = new Color(0.02f, 0.04f, 0.07f, 0.92f);
+        gameOverPanel = panelObject;
+
+        GameObject endTextObject = new GameObject("Game Over Message", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        endTextObject.transform.SetParent(panelObject.transform, false);
+        RectTransform endTextRect = endTextObject.GetComponent<RectTransform>();
+        endTextRect.anchorMin = Vector2.zero;
+        endTextRect.anchorMax = Vector2.one;
+        endTextRect.offsetMin = new Vector2(32f, 24f);
+        endTextRect.offsetMax = new Vector2(-32f, -24f);
+        gameOverText = endTextObject.GetComponent<TextMeshProUGUI>();
+        ConfigureHudText(gameOverText, 68f, TextAlignmentOptions.Center);
+        gameOverText.enableAutoSizing = true;
+        gameOverText.fontSizeMin = 44f;
+        gameOverText.fontSizeMax = 68f;
+        gameOverPanel.SetActive(false);
+
+        UpdateKillCount();
         UpdateHearts();
     }
 
-    private static void AddTextShadow(Text text)
+    private static void SetHudRect(RectTransform rect, Vector2 anchorMin, Vector2 anchorMax, Vector2 position, Vector2 size)
     {
-        Shadow shadow = text.gameObject.AddComponent<Shadow>();
-        shadow.effectColor = new Color(0f, 0f, 0f, 0.8f);
-        shadow.effectDistance = new Vector2(2f, -2f);
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.pivot = new Vector2((anchorMin.x + anchorMax.x) * 0.5f, (anchorMin.y + anchorMax.y) * 0.5f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
+    }
+
+    private static void ConfigureHudText(TMP_Text text, float size, TextAlignmentOptions alignment)
+    {
+        text.font = TMP_Settings.defaultFontAsset;
+        if (text.font == null)
+            text.font = Resources.Load<TMP_FontAsset>("Fonts & Materials/LiberationSans SDF");
+        text.fontSize = size;
+        text.alignment = alignment;
+        text.color = Color.white;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+        text.raycastTarget = false;
     }
 
     private void ConfigurePlayerHitbox()
@@ -393,7 +439,14 @@ public class ShootingGameManager : MonoBehaviour
 
     private void UpdateProgress()
     {
+        UpdateKillCount();
         SetStatus("Monsters defeated: " + monstersDefeated + " / " + MonsterCount);
+    }
+
+    private void UpdateKillCount()
+    {
+        if (killCountText != null)
+            killCountText.text = "KILLS  " + monstersDefeated + " / " + MonsterCount;
     }
 
     private void UpdateHearts()
@@ -408,6 +461,12 @@ public class ShootingGameManager : MonoBehaviour
             statusText.text = message;
     }
 
+    private void SetTimer(string message)
+    {
+        if (timerText != null)
+            timerText.text = message;
+    }
+
     private void EndGame(bool won)
     {
         if (gameOver)
@@ -417,6 +476,11 @@ public class ShootingGameManager : MonoBehaviour
         roundStarted = false;
         StopAllCoroutines();
         SetStatus(won ? "YOU WIN — ALL MONSTERS DEFEATED" : "GAME OVER");
+        SetTimer(won ? "LEVEL COMPLETE" : "GAME OVER");
+        if (gameOverText != null)
+            gameOverText.text = won ? "LEVEL COMPLETE\nAll monsters defeated" : "GAME OVER\nAll lives lost";
+        if (gameOverPanel != null)
+            gameOverPanel.SetActive(true);
 
         if (won)
             ShowWinPortal();
@@ -546,9 +610,10 @@ public class ShootingGameManager : MonoBehaviour
         labelRect.anchorMax = Vector2.one;
         labelRect.offsetMin = new Vector2(24f, 12f);
         labelRect.offsetMax = new Vector2(-24f, -12f);
+        labelRect.localScale = new Vector3(-1f, 1f, 1f);
 
         TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
-        label.text = "Enter Level 3";
+        label.text = "Level 3 (Enter)";
         label.font = TMP_Settings.defaultFontAsset;
         label.fontSize = 82f;
         label.alignment = TextAlignmentOptions.Center;
