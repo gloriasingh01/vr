@@ -1,8 +1,11 @@
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 public class ShootingGameManager : MonoBehaviour
 {
@@ -14,6 +17,8 @@ public class ShootingGameManager : MonoBehaviour
     [SerializeField] private float spawnRadius = 16f;
     [SerializeField] private float monsterSpeed = 2.5f;
     [SerializeField] private float spawnInterval = 2f;
+    [SerializeField] private GameObject winPortalPrefab;
+    [SerializeField] private string winPortalSceneName = "World1";
 
     private GameObject monsterPrefab;
     private Transform playerRoot;
@@ -26,11 +31,15 @@ public class ShootingGameManager : MonoBehaviour
     private int lives = StartingLives;
     private int monstersDefeated;
     private Text statusText;
+    private GameObject winPortalObject;
+    private ScenePortal winPortalScene;
+    private XRSimpleInteractable winPortalInteractable;
+    private Button winPortalButton;
     private readonly List<Text> heartLabels = new List<Text>(StartingLives);
     private readonly List<StoneMonsterEnemy> waveMonsters = new List<StoneMonsterEnemy>(MonsterCount);
     private readonly List<StoneMonsterEnemy> activeMonsters = new List<StoneMonsterEnemy>();
 
-    public bool CanShoot => roundStarted && !gameOver;
+    public bool CanShoot => !gameOver;
     public bool IsGameOver => gameOver;
     public Transform PlayerRoot => playerRoot;
     public Transform PlayerTarget => playerTarget;
@@ -43,10 +52,11 @@ public class ShootingGameManager : MonoBehaviour
 
     private void InitializeFromScene()
     {
+        Transform rigRoot = FindXROriginRoot(transform);
         GunShooter shooter = null;
         foreach (GunShooter candidate in FindObjectsOfType<GunShooter>(true))
         {
-            if (candidate.transform.root == transform.root)
+            if (candidate.transform == rigRoot || candidate.transform.IsChildOf(rigRoot))
             {
                 shooter = candidate;
                 break;
@@ -60,9 +70,9 @@ public class ShootingGameManager : MonoBehaviour
         }
 
         Camera camera = null;
-        foreach (Camera candidate in FindObjectsOfType<Camera>(true))
+        foreach (Camera candidate in rigRoot.GetComponentsInChildren<Camera>(true))
         {
-            if (candidate.gameObject.name == "Main Camera" && candidate.transform.root == transform.root)
+            if (candidate.gameObject.name == "Main Camera")
             {
                 camera = candidate;
                 break;
@@ -71,20 +81,31 @@ public class ShootingGameManager : MonoBehaviour
         if (camera == null)
             camera = Camera.main;
 
-        Transform handMount = FindRightHandMount();
+        Transform handMount = FindRightHandMount(rigRoot);
         if (handMount != null && shooter.transform.parent != handMount)
             shooter.transform.SetParent(handMount, false);
         else if (handMount == null && Application.isEditor && camera != null && shooter.transform.parent != camera.transform)
             shooter.transform.SetParent(camera.transform, false);
         shooter.gameObject.SetActive(true);
 
-        Initialize(shooter.stoneMonsterPrefab, transform.root, camera, shooter.muzzlePoint);
+        Initialize(shooter.stoneMonsterPrefab, rigRoot, camera, shooter.muzzlePoint);
     }
 
-    private Transform FindRightHandMount()
+    private static Transform FindXROriginRoot(Transform hint)
+    {
+        for (Transform current = hint; current != null; current = current.parent)
+        {
+            if (current.GetComponent("XROrigin") != null || current.name.StartsWith("XR Origin", System.StringComparison.Ordinal))
+                return current;
+        }
+
+        return hint;
+    }
+
+    private Transform FindRightHandMount(Transform rigRoot)
     {
         Transform trackedRightHand = null;
-        foreach (Transform candidate in transform.root.GetComponentsInChildren<Transform>(true))
+        foreach (Transform candidate in rigRoot.GetComponentsInChildren<Transform>(true))
         {
             if (candidate.name == "Right Hand")
             {
@@ -108,7 +129,9 @@ public class ShootingGameManager : MonoBehaviour
         monsterPrefab = prefab;
         playerRoot = root;
         playerCamera = camera;
-        playerTarget = gunTarget != null ? gunTarget : camera != null ? camera.transform : root;
+        // Monsters attack the player body/head, not the moving muzzle. The muzzle
+        // remains the ray origin for aiming and firing only.
+        playerTarget = camera != null ? camera.transform : root;
 
         // Hide and prepare all placed wave monsters before the first rendered frame.
         if (monsterPrefab != null && playerRoot != null)
@@ -137,6 +160,7 @@ public class ShootingGameManager : MonoBehaviour
             PrepareWaveMonsters();
 
         StartCoroutine(BeginRound());
+        PrepareWinPortal();
     }
 
     private void PrepareWaveMonsters()
@@ -241,8 +265,9 @@ public class ShootingGameManager : MonoBehaviour
     {
         GameObject canvasObject = new GameObject("Shooting HUD", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         Canvas canvas = canvasObject.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.worldCamera = null;
+        canvas.renderMode = playerCamera != null ? RenderMode.ScreenSpaceCamera : RenderMode.ScreenSpaceOverlay;
+        canvas.worldCamera = playerCamera;
+        canvas.planeDistance = 1.2f;
         canvas.sortingOrder = 100;
 
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
@@ -393,10 +418,178 @@ public class ShootingGameManager : MonoBehaviour
         StopAllCoroutines();
         SetStatus(won ? "YOU WIN — ALL MONSTERS DEFEATED" : "GAME OVER");
 
+        if (won)
+            ShowWinPortal();
+
         foreach (StoneMonsterEnemy monster in activeMonsters)
         {
             if (monster != null)
                 monster.gameObject.SetActive(false);
         }
+    }
+
+    private void PrepareWinPortal()
+    {
+        if (winPortalObject != null)
+            return;
+
+        // Reuse a saved portal if present; otherwise spawn the matching anchor
+        // prefab used by Altar_Ruins_FREE/DemoScene.
+        foreach (GameObject sceneRoot in SceneManager.GetActiveScene().GetRootGameObjects())
+        {
+            foreach (Transform candidate in sceneRoot.GetComponentsInChildren<Transform>(true))
+            {
+                if (candidate.name != "Portal Teleport Anchor")
+                    continue;
+
+                winPortalObject = candidate.gameObject;
+                winPortalScene = candidate.GetComponentInChildren<ScenePortal>(true);
+                break;
+            }
+
+            if (winPortalObject != null)
+                break;
+        }
+
+        if (winPortalObject == null)
+        {
+            if (winPortalPrefab == null)
+            {
+                Debug.LogError("[ShootingGame] Teleport Anchor prefab is not assigned; the win portal cannot be shown.", this);
+                return;
+            }
+
+            try
+            {
+                winPortalObject = Instantiate(winPortalPrefab);
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogError("[ShootingGame] Could not instantiate the win portal. The shooting round will continue. " + exception, this);
+                return;
+            }
+            winPortalObject.name = "Portal Teleport Anchor";
+        }
+
+        if (winPortalScene == null)
+            winPortalScene = winPortalObject.GetComponentInChildren<ScenePortal>(true);
+        if (winPortalScene == null)
+            winPortalScene = winPortalObject.AddComponent<ScenePortal>();
+
+        winPortalScene.SetTargetScene(winPortalSceneName);
+
+        // The winner sees the new button panel instead of the prefab's default
+        // anchor artwork. Its teleport interaction and collider remain intact.
+        foreach (Renderer portalRenderer in winPortalObject.GetComponentsInChildren<Renderer>(true))
+            portalRenderer.enabled = false;
+        foreach (Canvas portalCanvas in winPortalObject.GetComponentsInChildren<Canvas>(true))
+            portalCanvas.enabled = false;
+
+        BuildWinPortalButton();
+        winPortalObject.SetActive(false);
+    }
+
+    private void BuildWinPortalButton()
+    {
+        GameObject canvasObject = new GameObject(
+            "Enter Level 3 Canvas",
+            typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        canvasObject.transform.SetParent(winPortalObject.transform, false);
+
+        Canvas canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.sortingOrder = 200;
+        canvas.worldCamera = playerCamera;
+
+        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
+        scaler.dynamicPixelsPerUnit = 10f;
+
+        RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
+        canvasRect.sizeDelta = new Vector2(800f, 220f);
+        canvasRect.localScale = Vector3.one * 0.00125f;
+        canvasRect.localPosition = Vector3.forward * 0.55f;
+
+        GameObject buttonObject = new GameObject(
+            "Enter Level 3 Button",
+            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button),
+            typeof(BoxCollider), typeof(XRSimpleInteractable));
+        buttonObject.transform.SetParent(canvasObject.transform, false);
+
+        RectTransform buttonRect = buttonObject.GetComponent<RectTransform>();
+        buttonRect.anchorMin = Vector2.zero;
+        buttonRect.anchorMax = Vector2.one;
+        buttonRect.offsetMin = Vector2.zero;
+        buttonRect.offsetMax = Vector2.zero;
+
+        Image background = buttonObject.GetComponent<Image>();
+        background.color = new Color32(12, 35, 59, 245);
+        Outline border = buttonObject.AddComponent<Outline>();
+        border.effectColor = new Color32(69, 218, 255, 255);
+        border.effectDistance = new Vector2(5f, -5f);
+
+        winPortalButton = buttonObject.GetComponent<Button>();
+        winPortalButton.targetGraphic = background;
+        winPortalButton.onClick.AddListener(LoadNextLevelFromPortal);
+
+        BoxCollider hitbox = buttonObject.GetComponent<BoxCollider>();
+        hitbox.size = new Vector3(800f, 220f, 32f);
+        hitbox.isTrigger = false;
+
+        winPortalInteractable = buttonObject.GetComponent<XRSimpleInteractable>();
+        winPortalInteractable.interactionLayers = new InteractionLayerMask { value = -1 };
+        winPortalInteractable.selectEntered.AddListener(HandleWinPortalSelected);
+
+        GameObject labelObject = new GameObject("Enter Level 3 Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        labelObject.transform.SetParent(buttonObject.transform, false);
+        RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = new Vector2(24f, 12f);
+        labelRect.offsetMax = new Vector2(-24f, -12f);
+
+        TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
+        label.text = "Enter Level 3";
+        label.font = TMP_Settings.defaultFontAsset;
+        label.fontSize = 82f;
+        label.alignment = TextAlignmentOptions.Center;
+        label.color = Color.white;
+        label.enableAutoSizing = true;
+        label.fontSizeMin = 48f;
+        label.fontSizeMax = 82f;
+        label.raycastTarget = false;
+    }
+
+    private void ShowWinPortal()
+    {
+        if (winPortalObject == null)
+            PrepareWinPortal();
+
+        if (winPortalObject == null)
+            return;
+
+        Transform view = playerCamera != null ? playerCamera.transform : Camera.main != null ? Camera.main.transform : null;
+        if (view == null)
+        {
+            Debug.LogError("[ShootingGame] Cannot place the win portal because the player camera was not found.", this);
+            return;
+        }
+
+        Vector3 forward = view.forward.normalized;
+        winPortalObject.transform.SetPositionAndRotation(
+            view.position + forward * 1.6f,
+            Quaternion.LookRotation(-forward, Vector3.up));
+        winPortalObject.SetActive(true);
+        Debug.Log("[ShootingGame] All eight monsters defeated. Enter Level 3 portal is now visible in front of the player.", winPortalObject);
+    }
+
+    private void HandleWinPortalSelected(SelectEnterEventArgs args)
+    {
+        LoadNextLevelFromPortal();
+    }
+
+    private void LoadNextLevelFromPortal()
+    {
+        if (winPortalScene != null)
+            winPortalScene.TriggerSceneLoad();
     }
 }

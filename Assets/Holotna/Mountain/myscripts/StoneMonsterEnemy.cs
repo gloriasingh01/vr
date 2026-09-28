@@ -64,7 +64,8 @@ public class StoneMonsterEnemy : MonoBehaviour
         if (!launched || defeated || stopped || gameManager == null || other == null)
             return;
 
-        if (other.transform.root == gameManager.PlayerRoot)
+        Transform playerRoot = gameManager.PlayerRoot;
+        if (playerRoot != null && (other.transform == playerRoot || other.transform.IsChildOf(playerRoot)))
             gameManager.RegisterPlayerContact(this);
     }
 

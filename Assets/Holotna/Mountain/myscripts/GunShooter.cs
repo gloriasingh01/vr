@@ -22,6 +22,7 @@ public class GunShooter : MonoBehaviour
     private XRGrabInteractable grabInteractable;
     private Camera aimCamera;
     private Transform handMount;
+    private Transform playerRoot;
     private Transform attachTransform;
     private NearFarInteractor handInteractor;
     private ShootingGameManager gameManager;
@@ -47,10 +48,10 @@ public class GunShooter : MonoBehaviour
 
     void Start()
     {
-        FindAimCamera();
+        playerRoot = FindPlayerRigRoot();
+        FindAimCamera(playerRoot);
         attachTransform = transform.Find("AttachTransform");
 
-        Transform playerRoot = aimCamera != null ? aimCamera.transform.root : FindPlayerRigRoot();
         if (playerRoot == null)
         {
             Debug.LogError("[ShootingGame] Could not find the XR Origin or Main Camera. The wave manager was not started.", this);
@@ -120,7 +121,7 @@ public class GunShooter : MonoBehaviour
             return;
 
         if (aimCamera == null)
-            FindAimCamera();
+            FindAimCamera(FindPlayerRigRoot());
 
         if (aimCamera != null)
         {
@@ -164,8 +165,17 @@ public class GunShooter : MonoBehaviour
 
     private Transform FindPlayerRigRoot()
     {
+        for (Transform current = transform; current != null; current = current.parent)
+        {
+            if (current.GetComponent("XROrigin") != null || current.name.StartsWith("XR Origin", System.StringComparison.Ordinal))
+                return current;
+        }
+
         GameObject rig = GameObject.Find("XR Origin Hands (XR Rig)");
-        return rig != null ? rig.transform : null;
+        if (rig != null)
+            return rig.transform;
+
+        return aimCamera != null ? aimCamera.transform : null;
     }
 
     private void ConfigureHandRay()
@@ -187,14 +197,17 @@ public class GunShooter : MonoBehaviour
         }
     }
 
-    private void FindAimCamera()
+    private void FindAimCamera(Transform playerRoot)
     {
-        foreach (Camera rigCamera in FindObjectsOfType<Camera>(true))
+        if (playerRoot != null)
         {
-            if (rigCamera.gameObject.name == "Main Camera")
+            foreach (Camera rigCamera in playerRoot.GetComponentsInChildren<Camera>(true))
             {
-                aimCamera = rigCamera;
-                return;
+                if (rigCamera.gameObject.name == "Main Camera")
+                {
+                    aimCamera = rigCamera;
+                    return;
+                }
             }
         }
 
@@ -249,6 +262,7 @@ public class GunShooter : MonoBehaviour
             rb = bullet.AddComponent<Rigidbody>();
         if (bullet.GetComponent<Collider>() == null)
             bullet.AddComponent<SphereCollider>();
+        IgnoreShooterCollisions(bullet);
         rb.isKinematic = false;
         rb.useGravity = false;
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
@@ -256,5 +270,36 @@ public class GunShooter : MonoBehaviour
 
         Debug.Log("[ShootingGame] Fired projectile from MuzzlePoint.", this);
         Destroy(bullet, 3f);
+    }
+
+    private void IgnoreShooterCollisions(GameObject bullet)
+    {
+        Collider[] bulletColliders = bullet.GetComponentsInChildren<Collider>(true);
+        if (playerRoot != null)
+        {
+            foreach (Collider playerCollider in playerRoot.GetComponentsInChildren<Collider>(true))
+            {
+                if (playerCollider == null || !playerCollider.enabled)
+                    continue;
+
+                foreach (Collider bulletCollider in bulletColliders)
+                {
+                    if (bulletCollider != null && bulletCollider.enabled)
+                        Physics.IgnoreCollision(bulletCollider, playerCollider, true);
+                }
+            }
+        }
+
+        foreach (Collider gunCollider in GetComponentsInChildren<Collider>(true))
+        {
+            if (gunCollider == null || !gunCollider.enabled)
+                continue;
+
+            foreach (Collider bulletCollider in bulletColliders)
+            {
+                if (bulletCollider != null && bulletCollider.enabled)
+                    Physics.IgnoreCollision(bulletCollider, gunCollider, true);
+            }
+        }
     }
 }
