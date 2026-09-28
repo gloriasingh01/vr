@@ -1,7 +1,6 @@
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
-using UnityEngine.XR.Interaction.Toolkit;
-using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Hands;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 
@@ -13,91 +12,79 @@ public class GunShooter : MonoBehaviour
     public Transform muzzlePoint;
     public float shootForce = 35f;
 
-    [Header("XR Hand Mount")]
-    [Tooltip("When enabled, the muzzle follows the main camera's forward direction while the rifle stays positioned under its hand parent.")]
-    public bool alignMuzzleToMainCamera = true;
-    [Tooltip("Hide the right-hand mesh so the rifle visually replaces it.")]
+    [Header("Right Hand Pose")]
+    [HideInInspector] public bool alignMuzzleToMainCamera;
+    [Tooltip("Rotation adjustment from the tracked wrist pose to the rifle grip.")]
+    public Vector3 handRotationOffsetEuler;
+    [Tooltip("Thumb and index tips must be closer than this distance to fire.")]
+    [Min(0.005f)] public float pinchPressDistance = 0.025f;
+    [Tooltip("The pinch must open beyond this distance before another shot can fire.")]
+    [Min(0.01f)] public float pinchReleaseDistance = 0.045f;
     public bool hideRightHandMesh = true;
 
-    private XRGrabInteractable grabInteractable;
-    private Camera aimCamera;
-    private Transform handMount;
     private Transform playerRoot;
+    private Transform handMount;
     private Transform attachTransform;
     private NearFarInteractor handInteractor;
     private ShootingGameManager gameManager;
-    private bool cameraMountFallback;
+    private Camera aimCamera;
+    private XRHandSubsystem handSubsystem;
+    private readonly List<XRHandSubsystem> handSubsystems = new List<XRHandSubsystem>();
+    private Vector3 attachLocalPosition;
+    private Quaternion attachLocalRotation;
+    private bool hasAttachPose;
+    private bool wasPinching;
+    private bool warnedAboutHandTracking;
 
-    void Awake()
-    {
-        grabInteractable = GetComponent<XRGrabInteractable>();
-    }
-
-    void OnEnable()
-    {
-        // Listen for the select/activation event (trigger press while holding)
-        if (grabInteractable != null)
-            grabInteractable.activated.AddListener(Shoot);
-    }
-
-    void OnDisable()
-    {
-        if (grabInteractable != null)
-            grabInteractable.activated.RemoveListener(Shoot);
-    }
-
-    void Start()
+    private void Start()
     {
         playerRoot = FindPlayerRigRoot();
-        FindAimCamera(playerRoot);
-        attachTransform = transform.Find("AttachTransform");
-
         if (playerRoot == null)
         {
-            Debug.LogError("[ShootingGame] Could not find the XR Origin or Main Camera. The wave manager was not started.", this);
+            Debug.LogError("[ShootingGame] Could not find the XR Origin; rifle setup stopped.", this);
             return;
         }
 
+        aimCamera = FindAimCamera(playerRoot);
         handMount = FindRightHandMount(playerRoot);
-        if (handMount != null)
+        if (handMount == null)
         {
-            if (transform.parent != handMount)
-                transform.SetParent(handMount, false);
-            transform.localRotation = Quaternion.identity;
-            transform.localScale = Vector3.one * 0.45f;
-            cameraMountFallback = aimCamera != null && handMount == aimCamera.transform;
-            if (cameraMountFallback)
-            {
-                transform.localPosition = new Vector3(0.28f, -0.24f, 0.72f);
-                Debug.Log("[ShootingGame] No tracked right hand/controller is active; mounting the rifle in the camera view for preview.", this);
-            }
-            else if (attachTransform != null)
-            {
-                transform.localPosition = -Vector3.Scale(attachTransform.localPosition, transform.localScale);
-            }
-        }
-        else if (handMount == null)
-        {
-            Debug.LogError("[ShootingGame] Could not find 'Right Hand' beneath the XR Origin. The rifle could not mount to the hand.", this);
+            Debug.LogError("[ShootingGame] Could not find the Right Hand object under the XR Origin.", this);
+            return;
         }
 
+        attachTransform = transform.Find("AttachTransform");
+        transform.SetParent(handMount, false);
+        transform.localScale = Vector3.one * 0.45f;
+        transform.localRotation = Quaternion.identity;
+
+        if (attachTransform != null)
+        {
+            attachLocalPosition = transform.InverseTransformPoint(attachTransform.position);
+            attachLocalRotation = Quaternion.Inverse(transform.rotation) * attachTransform.rotation;
+            hasAttachPose = true;
+        }
+        else
+        {
+            Debug.LogWarning("[ShootingGame] AttachTransform was not found; the rifle will follow the wrist origin.", this);
+        }
+
+        handInteractor = handMount.GetComponentInChildren<NearFarInteractor>(true);
         ConfigureHandRay();
         if (hideRightHandMesh)
             HideRightHandMesh();
 
-        // This rifle is permanently hand-mounted; physics/grab state must not detach it from tracking.
         Rigidbody gunBody = GetComponent<Rigidbody>();
         if (gunBody != null)
         {
             gunBody.isKinematic = true;
             gunBody.useGravity = false;
         }
-        if (grabInteractable != null)
-            grabInteractable.enabled = false;
 
         gameManager = playerRoot.GetComponent<ShootingGameManager>();
         if (gameManager == null)
             gameManager = playerRoot.gameObject.AddComponent<ShootingGameManager>();
+
         if (stoneMonsterPrefab == null)
         {
             Debug.LogError("[ShootingGame] Stone Monster Prefab is not assigned on GunShooter.", this);
@@ -107,60 +94,71 @@ public class GunShooter : MonoBehaviour
         gameManager.Initialize(stoneMonsterPrefab, playerRoot, aimCamera, muzzlePoint);
     }
 
-    void LateUpdate()
+    private void LateUpdate()
     {
-        if (handInteractor != null && handInteractor.activateInput.ReadWasPerformedThisFrame() &&
-            (grabInteractable == null || !grabInteractable.isSelected))
-            Fire();
-
-        // Let the camera-mounted preview rifle be tested in the Editor without an XR controller.
-        if (cameraMountFallback && Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-            Fire();
-
-        if (!alignMuzzleToMainCamera || muzzlePoint == null)
+        if (playerRoot == null || handMount == null)
             return;
 
-        if (aimCamera == null)
-            FindAimCamera(FindPlayerRigRoot());
-
-        if (aimCamera != null)
+        if (handSubsystem == null || !handSubsystem.running)
         {
-            Quaternion aimCorrection = Quaternion.FromToRotation(muzzlePoint.forward, aimCamera.transform.forward);
-            transform.rotation = aimCorrection * transform.rotation;
-
-            // Keep the rifle's attach point planted at the right hand while its aim follows the head camera.
-            if (!cameraMountFallback && handMount != null && attachTransform != null)
-                transform.position += handMount.position - attachTransform.position;
+            handSubsystems.Clear();
+            SubsystemManager.GetSubsystems(handSubsystems);
+            handSubsystem = handSubsystems.Find(subsystem => subsystem != null && subsystem.running);
         }
 
-    }
-
-    private Transform FindRightHandMount(Transform playerRoot)
-    {
-        if (playerRoot == null)
-            return null;
-
-        Transform trackedRightHand = null;
-        foreach (Transform candidate in playerRoot.GetComponentsInChildren<Transform>(true))
+        if (handSubsystem == null || !handSubsystem.rightHand.isTracked)
         {
-            if (candidate.name == "Right Hand")
+            wasPinching = false;
+            if (!warnedAboutHandTracking)
             {
-                trackedRightHand = candidate;
-                if (candidate.gameObject.activeInHierarchy || !Application.isEditor)
-                    return candidate;
+                Debug.LogWarning("[ShootingGame] Waiting for tracked right-hand joints; the rifle will not switch to camera tracking.", this);
+                warnedAboutHandTracking = true;
             }
+            return;
         }
 
-        if (trackedRightHand != null && !Application.isEditor)
-            return trackedRightHand;
-
-        foreach (Camera candidate in playerRoot.GetComponentsInChildren<Camera>(true))
+        XRHand rightHand = handSubsystem.rightHand;
+        XRHandJoint wrist = rightHand.GetJoint(XRHandJointID.Wrist);
+        XRHandJoint thumbTip = rightHand.GetJoint(XRHandJointID.ThumbTip);
+        XRHandJoint indexTip = rightHand.GetJoint(XRHandJointID.IndexTip);
+        if (!wrist.TryGetPose(out Pose wristPose))
         {
-            if (candidate.gameObject.name == "Main Camera")
-                return candidate.transform;
+            wasPinching = false;
+            return;
         }
 
-        return null;
+        // XR Hands joint poses are local to the XR Origin tracking space.
+        Quaternion trackedHandRotation = playerRoot.rotation * wristPose.rotation;
+        Vector3 trackedHandPosition = playerRoot.TransformPoint(wristPose.position);
+        Quaternion rifleRotation = trackedHandRotation * Quaternion.Euler(handRotationOffsetEuler);
+        if (hasAttachPose)
+        {
+            rifleRotation *= Quaternion.Inverse(attachLocalRotation);
+            transform.rotation = rifleRotation;
+            transform.position = trackedHandPosition - rifleRotation * Vector3.Scale(attachLocalPosition, transform.lossyScale);
+        }
+        else
+        {
+            transform.SetPositionAndRotation(trackedHandPosition, rifleRotation);
+        }
+
+        if (!thumbTip.TryGetPose(out Pose thumbPose) || !indexTip.TryGetPose(out Pose indexPose))
+        {
+            wasPinching = false;
+            return;
+        }
+
+        float tipDistance = Vector3.Distance(thumbPose.position, indexPose.position);
+        if (wasPinching)
+        {
+            if (tipDistance > pinchReleaseDistance)
+                wasPinching = false;
+        }
+        else if (tipDistance <= pinchPressDistance)
+        {
+            wasPinching = true;
+            Fire();
+        }
     }
 
     private Transform FindPlayerRigRoot()
@@ -172,55 +170,63 @@ public class GunShooter : MonoBehaviour
         }
 
         GameObject rig = GameObject.Find("XR Origin Hands (XR Rig)");
-        if (rig != null)
-            return rig.transform;
+        return rig != null ? rig.transform : null;
+    }
 
-        return aimCamera != null ? aimCamera.transform : null;
+    private static Transform FindRightHandMount(Transform root)
+    {
+        foreach (Transform candidate in root.GetComponentsInChildren<Transform>(true))
+        {
+            if (candidate.name == "Right Hand")
+                return candidate;
+        }
+
+        return null;
+    }
+
+    private static Camera FindAimCamera(Transform root)
+    {
+        foreach (Camera candidate in root.GetComponentsInChildren<Camera>(true))
+        {
+            if (candidate.gameObject.name == "Main Camera")
+                return candidate;
+        }
+
+        return Camera.main;
     }
 
     private void ConfigureHandRay()
     {
-        if (handMount == null || muzzlePoint == null)
+        if (muzzlePoint == null)
+        {
+            Debug.LogError("[ShootingGame] MuzzlePoint is not assigned; muzzle ray and shooting are unavailable.", this);
             return;
+        }
 
-        handInteractor = handMount.GetComponentInChildren<NearFarInteractor>(true);
-        if (handInteractor == null)
-            return;
-
-        if (handInteractor.farInteractionCaster != null)
+        if (handInteractor != null && handInteractor.farInteractionCaster != null)
             handInteractor.farInteractionCaster.castOrigin = muzzlePoint;
+        else if (handInteractor != null)
+            Debug.LogWarning("[ShootingGame] NearFarInteractor has no far interaction caster; its ray origin cannot be moved to MuzzlePoint.", this);
+        else
+            Debug.LogWarning("[ShootingGame] No NearFarInteractor was found beneath Right Hand; the ray visual will still be redirected if present.", this);
 
-        foreach (CurveVisualController lineVisual in handInteractor.GetComponentsInChildren<CurveVisualController>(true))
+        int visualCount = 0;
+        foreach (CurveVisualController lineVisual in handMount.GetComponentsInChildren<CurveVisualController>(true))
         {
             lineVisual.overrideLineOrigin = true;
             lineVisual.lineOriginTransform = muzzlePoint;
-        }
-    }
-
-    private void FindAimCamera(Transform playerRoot)
-    {
-        if (playerRoot != null)
-        {
-            foreach (Camera rigCamera in playerRoot.GetComponentsInChildren<Camera>(true))
-            {
-                if (rigCamera.gameObject.name == "Main Camera")
-                {
-                    aimCamera = rigCamera;
-                    return;
-                }
-            }
+            visualCount++;
         }
 
-        aimCamera = Camera.main;
+        if (visualCount == 0)
+            Debug.LogWarning("[ShootingGame] No CurveVisualController was found under NearFarInteractor; only the interaction cast origin was redirected.", this);
+        else
+            Debug.Log("[ShootingGame] Right-hand ray origin and line visual now use MuzzlePoint.", this);
     }
 
     private void HideRightHandMesh()
     {
-        Transform hand = transform.parent;
-        if (hand == null)
-            return;
-
-        foreach (Transform child in hand.GetComponentsInChildren<Transform>(true))
+        foreach (Transform child in handMount.GetComponentsInChildren<Transform>(true))
         {
             string normalizedName = child.name.Replace(" ", string.Empty);
             if (child == transform ||
@@ -230,11 +236,6 @@ public class GunShooter : MonoBehaviour
             foreach (Renderer handRenderer in child.GetComponentsInChildren<Renderer>(true))
                 handRenderer.enabled = false;
         }
-    }
-
-    private void Shoot(ActivateEventArgs args)
-    {
-        Fire();
     }
 
     private void Fire()
@@ -248,7 +249,6 @@ public class GunShooter : MonoBehaviour
             return;
         }
 
-        // Spawn at the muzzle and travel along its (camera-aligned) forward axis.
         GameObject bullet = Instantiate(bulletPrefab, muzzlePoint.position, muzzlePoint.rotation);
         bullet.transform.localScale = Vector3.one * 0.1f;
 
@@ -257,18 +257,19 @@ public class GunShooter : MonoBehaviour
             projectile = bullet.AddComponent<BulletProjectile>();
         projectile.Initialize();
 
-        Rigidbody rb = bullet.GetComponent<Rigidbody>();
-        if (rb == null)
-            rb = bullet.AddComponent<Rigidbody>();
+        Rigidbody body = bullet.GetComponent<Rigidbody>();
+        if (body == null)
+            body = bullet.AddComponent<Rigidbody>();
         if (bullet.GetComponent<Collider>() == null)
             bullet.AddComponent<SphereCollider>();
-        IgnoreShooterCollisions(bullet);
-        rb.isKinematic = false;
-        rb.useGravity = false;
-        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        rb.AddForce(muzzlePoint.forward * shootForce, ForceMode.VelocityChange);
 
-        Debug.Log("[ShootingGame] Fired projectile from MuzzlePoint.", this);
+        IgnoreShooterCollisions(bullet);
+        body.isKinematic = false;
+        body.useGravity = false;
+        body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        body.AddForce(muzzlePoint.forward * shootForce, ForceMode.VelocityChange);
+
+        Debug.Log("[ShootingGame] Right-hand pinch fired a projectile from MuzzlePoint.", this);
         Destroy(bullet, 3f);
     }
 

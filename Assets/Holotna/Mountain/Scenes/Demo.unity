@@ -1112404,7 +1112404,7 @@ MonoBehaviour:
   stoneMonsterPrefab: {fileID: 1713781036754730, guid: 0f8a471e5537f864ebdb454fe82308eb, type: 3}
   muzzlePoint: {fileID: 1415406071}
   shootForce: 35
-  alignMuzzleToMainCamera: 1
+  alignMuzzleToMainCamera: 0
   hideRightHandMesh: 1
 --- !u!1 &902889453
 GameObject:
