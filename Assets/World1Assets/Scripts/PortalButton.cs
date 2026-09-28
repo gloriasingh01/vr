@@ -10,6 +10,11 @@ public class PortalButton : MonoBehaviour
     [SerializeField] private GameObject portalVisual;
     [SerializeField] private GameObject activateOnArrival;
 
+    [Header("Teleport Audio")]
+    [SerializeField] private AudioClip teleportSound;
+    [Tooltip("Volume multiplier for teleport sound (1.0 = normal, up to 2.0 for higher volume boost).")]
+    [SerializeField, Range(0.1f, 2f)] private float volume = 1.0f;
+
     private Button button;
 
     private void Awake()
@@ -50,6 +55,12 @@ public class PortalButton : MonoBehaviour
         {
             float yaw = Vector3.SignedAngle(flatCameraForward, flatDestinationForward, Vector3.up);
             origin.transform.RotateAround(cameraTransform.position, Vector3.up, yaw);
+        }
+
+        // Play teleport sound at the player position so it never cuts off even after portal deactivates
+        if (teleportSound != null)
+        {
+            AudioSource.PlayClipAtPoint(teleportSound, destination.position, volume);
         }
 
         if (portalVisual != null)

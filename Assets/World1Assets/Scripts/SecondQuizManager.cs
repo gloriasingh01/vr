@@ -16,13 +16,30 @@ public class SecondQuizManager : MonoBehaviour
     [Tooltip("Optional scene to load after the correct answer. Leave blank for a normal quiz.")]
     [SerializeField] private string sceneToLoadOnCorrect;
 
+    [Header("Sound Effects")]
+    [SerializeField] private AudioClip correctSound;
+    [SerializeField] private AudioClip wrongSound;
+    [SerializeField] private AudioClip doorOpenSound;
+
     public string SceneToLoadOnCorrect => sceneToLoadOnCorrect;
 
     private bool answerAccepted;
+    private AudioSource _audio;
 
-    private static readonly Color Normal = new Color(0.15f, 0.35f, 0.65f, 1f);
-    private static readonly Color Wrong = new Color(0.70f, 0.12f, 0.12f, 1f);
+    private static readonly Color Normal  = new Color(0.15f, 0.35f, 0.65f, 1f);
+    private static readonly Color Wrong   = new Color(0.70f, 0.12f, 0.12f, 1f);
     private static readonly Color Correct = new Color(0.12f, 0.60f, 0.20f, 1f);
+
+    private void Awake()
+    {
+        _audio = GetComponent<AudioSource>();
+        if (_audio == null)
+        {
+            _audio = gameObject.AddComponent<AudioSource>();
+            _audio.playOnAwake  = false;
+            _audio.spatialBlend = 0f;
+        }
+    }
 
     private void Start()
     {
@@ -41,12 +58,14 @@ public class SecondQuizManager : MonoBehaviour
         if (index != correctAnswerIndex)
         {
             Debug.Log("[SecondQuizManager] WRONG answer.");
+            if (wrongSound != null && _audio != null) _audio.PlayOneShot(wrongSound);
             StartCoroutine(Flash(index));
             return;
         }
 
         Debug.Log("[SecondQuizManager] CORRECT answer! Starting door sequence.");
         answerAccepted = true;
+        if (correctSound != null && _audio != null) _audio.PlayOneShot(correctSound);
         StartCoroutine(Complete(index));
     }
 
@@ -87,6 +106,8 @@ public class SecondQuizManager : MonoBehaviour
             if (questionCanvas != null) questionCanvas.SetActive(false);
             yield break;
         }
+
+        if (doorOpenSound != null && _audio != null) _audio.PlayOneShot(doorOpenSound);
 
         Vector3 start = doorToOpen.localPosition;
         Vector3 end   = start + doorOpenOffset;
