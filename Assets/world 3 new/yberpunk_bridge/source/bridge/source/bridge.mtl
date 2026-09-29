@@ -1,0 +1,35 @@
+# Blender 4.1.0 MTL File: 'bridge.blend'
+# www.blender.org
+
+newmtl bridge
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd G:/work2/bridge/texture/bridge_BaseColor.jpg
+map_Ns G:/work2/bridge/texture/bridge_Roughness.jpg
+map_refl G:/work2/bridge/texture/bridge_Metallic.jpg
+map_Bump -bm 1.000000 G:/work2/bridge/texture/bridge_Normal.jpg
+
+newmtl emission
+Ns 360.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+
+newmtl glass
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.550000
+d 1.000000
+illum 2
+map_Bump -bm 1.000000 G:/work2/bridge/texture/glass_normal.png
