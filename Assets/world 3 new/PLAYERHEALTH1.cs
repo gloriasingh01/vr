@@ -8,6 +8,8 @@ public class PlayerHealth : MonoBehaviour
 
     private float currentHealth;
 
+    public bool IsDead => currentHealth <= 0f;
+
     [Header("UI")]
     public Image healthBarFill;
 

@@ -1,88 +1,155 @@
 using UnityEngine;
 
-public class EnemyAI : MonoBehaviour
+public class MosquitoEnemyAI : MonoBehaviour
 {
+    [Header("Detection")]
     public float detectionRange = 100f;
-    public float moveSpeed = 4f;
-    public float attackDistance = 2.5f;
+
+    [Header("Movement")]
+    public float moveSpeed = 300f;
+    public float stopDistance = 4f;
+    public float absoluteMinimumDistance = 3.5f;
+
+    [Header("Combat position")]
+    public float eyeHeightOffset = 0f;
+    public float sideOffset = 0f;
+
+    [Header("Hover")]
+    [Min(0f)] public float hoverAmount = 0.12f;
+    [Min(0f)] public float hoverSpeed = 3f;
 
     [Header("Attack")]
+    public float attackDistance = 4.5f;
     public float attackCooldown = 1.5f;
     public float damage = 10f;
 
     private Transform player;
+    private Transform playerCamera;
     private PlayerHealth playerHealth;
     private float nextAttackTime;
+    private float hoverOffset;
+    private bool pairConfigured;
 
-    void Start()
+    private void Awake()
     {
-        playerHealth = FindFirstObjectByType<PlayerHealth>();
-
-        if (playerHealth == null)
-        {
-            Debug.LogError("PLAYER HEALTH NOT FOUND!");
-            return;
-        }
-
-        player = playerHealth.transform;
-
-        Debug.Log("ENEMY AI STARTED");
-        Debug.Log("PLAYER FOUND: " + player.name);
+        if (!pairConfigured)
+            moveSpeed = 300f;
+        detectionRange = Mathf.Max(100f, detectionRange);
+        stopDistance = 4f;
+        absoluteMinimumDistance = 3.5f;
+        hoverAmount = 0.12f;
+        attackCooldown = 1.5f;
+        damage = 10f;
     }
 
-    void Update()
+    private void Start()
     {
+        ResolvePlayerReferences();
+        hoverOffset = Random.Range(0f, 10f);
+        nextAttackTime = Time.time;
+
+        if (playerHealth == null)
+            Debug.LogError(gameObject.name + ": PLAYER HEALTH NOT FOUND; this mech cannot attack.", this);
+        else
+            Debug.Log(gameObject.name + " READY | SPEED = " + moveSpeed + " | HOVER = " + hoverAmount, this);
+    }
+
+    /// <summary>Sets the speed and left/right formation for a member of a wave pair.</summary>
+    public void ConfigureForPair(int pairPosition)
+    {
+        pairConfigured = true;
+        moveSpeed = pairPosition == 0 ? 300f : 275f;
+        sideOffset = pairPosition == 0 ? -1.25f : 1.25f;
+        detectionRange = 100f;
+        stopDistance = 4f;
+        absoluteMinimumDistance = 3.5f;
+        hoverAmount = 0.12f;
+        hoverSpeed = 3f;
+        attackDistance = 4.5f;
+        attackCooldown = 1.5f;
+        damage = 10f;
+    }
+
+    private void Update()
+    {
+        ResolvePlayerReferences();
         if (player == null)
             return;
 
-        Vector3 enemyPos = transform.position;
-        Vector3 playerPos = player.position;
-
-        enemyPos.y = 0f;
-        playerPos.y = 0f;
-
-        float distance = Vector3.Distance(
-            enemyPos,
-            playerPos
-        );
-
+        Vector3 headPosition = playerCamera != null ? playerCamera.position : player.position;
+        Vector3 toHead = headPosition - transform.position;
+        float distance = toHead.magnitude;
         if (distance > detectionRange)
             return;
 
-        if (distance > attackDistance)
-        {
-            Vector3 direction =
-                playerPos - enemyPos;
+        Vector3 forward = playerCamera != null ? playerCamera.forward : player.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.001f)
+            forward = player.forward;
+        forward.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
 
-            direction.Normalize();
+        Vector3 desiredPosition = headPosition + forward * stopDistance + right * sideOffset;
+        desiredPosition.y = headPosition.y + eyeHeightOffset + hoverAmount * Mathf.Sin((Time.time + hoverOffset) * hoverSpeed);
 
-            transform.position +=
-                direction *
-                moveSpeed *
-                Time.deltaTime;
-        }
-        else
-        {
+        // Keep the full 3D separation outside the safety radius, including during overshoot.
+        Vector3 fromPlayer = desiredPosition - headPosition;
+        if (fromPlayer.magnitude < absoluteMinimumDistance)
+            desiredPosition = headPosition + (fromPlayer.sqrMagnitude > 0.001f ? fromPlayer.normalized : forward) * absoluteMinimumDistance;
+
+        transform.position = Vector3.MoveTowards(transform.position, desiredPosition, moveSpeed * Time.deltaTime);
+
+        Vector3 actualSeparation = transform.position - headPosition;
+        if (actualSeparation.magnitude < absoluteMinimumDistance)
+            transform.position = headPosition + (actualSeparation.sqrMagnitude > 0.001f ? actualSeparation.normalized : -forward) * absoluteMinimumDistance;
+
+        FacePlayer(headPosition);
+
+        if (Vector3.Distance(transform.position, headPosition) <= attackDistance)
             AttackPlayer();
-        }
     }
 
-    void AttackPlayer()
+    private void FacePlayer(Vector3 playerPosition)
     {
-        if (Time.time < nextAttackTime)
+        Vector3 direction = playerPosition - transform.position;
+        if (direction.sqrMagnitude < 0.01f)
             return;
 
-        nextAttackTime =
-            Time.time + attackCooldown;
+        Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+        transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, 8f * Time.deltaTime);
+    }
 
-        if (playerHealth != null)
+    private void AttackPlayer()
+    {
+        if (playerHealth == null || Time.time < nextAttackTime)
+            return;
+
+        nextAttackTime = Time.time + attackCooldown;
+        playerHealth.TakeDamage(damage);
+        Debug.Log(gameObject.name + " ATTACKED PLAYER | DAMAGE = " + damage, this);
+    }
+
+    private void ResolvePlayerReferences()
+    {
+        if (playerHealth == null)
+            playerHealth = FindFirstObjectByType<PlayerHealth>();
+
+        if (playerCamera == null && Camera.main != null)
+            playerCamera = Camera.main.transform;
+
+        if (player == null)
         {
-            playerHealth.TakeDamage(damage);
+            for (Transform current = playerCamera; current != null; current = current.parent)
+            {
+                if (current.name.Contains("XR Origin") || current.name.Contains("XR Rig"))
+                {
+                    player = current;
+                    break;
+                }
+            }
 
-            Debug.Log(
-                "ENEMY ATTACKED PLAYER! " +
-                "Damage = " + damage
-            );
+            if (player == null && playerHealth != null)
+                player = playerHealth.transform;
         }
     }
 }

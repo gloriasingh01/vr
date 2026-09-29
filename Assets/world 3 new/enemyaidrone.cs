@@ -1,97 +1,188 @@
+using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(Rigidbody))]
 public class DroneAI : MonoBehaviour
 {
     [Header("Detection")]
-    public float detectionRange = 100f;
+    [Min(0f)] public float detectionRange = 12f;
 
     [Header("Flying")]
-    public float moveSpeed = 4f;
-    public float flyingHeight = 3f;
-    public float attackDistance = 4f;
+    [Min(0f)] public float moveSpeed = 2.5f;
+    [Min(0f)] public float flyingHeight = 3f;
+    [Min(0f)] public float attackDistance = 2.5f;
+    [Min(0f)] public float orbitRadius = 0.75f;
+
+    [Header("One at a time")]
+    [Min(0.1f)] public float turnDuration = 4.5f;
+    [Min(0f)] public float pauseBetweenTurns = 0.8f;
 
     [Header("Attack")]
-    public float attackCooldown = 1.5f;
-    public float damage = 10f;
+    [Min(0f)] public float attackCooldown = 2.5f;
+    [Min(0f)] public float damage = 4f;
+
+    private static readonly List<DroneAI> activeDrones = new List<DroneAI>();
+    private static float groupEngagementStartTime;
+    private static float nextGroupAttackTime;
 
     private Transform player;
     private PlayerHealth playerHealth;
-    private float nextAttackTime;
+    private Rigidbody droneBody;
+    private Vector3 homePosition;
+    private Quaternion homeRotation;
+    private static bool groupEngaged;
 
-    void Start()
+    private void Awake()
     {
-        playerHealth = FindFirstObjectByType<PlayerHealth>();
+        droneBody = GetComponent<Rigidbody>();
+        droneBody.useGravity = false;
+        homePosition = droneBody.position;
+        homeRotation = droneBody.rotation;
 
-        if (playerHealth == null)
-        {
-            Debug.LogError("DRONE: PLAYER HEALTH NOT FOUND!");
-            return;
-        }
-
-        player = playerHealth.transform;
-
-        Debug.Log("DRONE AI STARTED");
-        Debug.Log("DRONE FOUND PLAYER: " + player.name);
+        EnemyHealth health = GetComponent<EnemyHealth>();
+        if (health == null)
+            health = gameObject.AddComponent<EnemyHealth>();
+        health.maxHealth = 100f;
     }
 
-    void Update()
+    private void OnEnable()
     {
+        if (!activeDrones.Contains(this))
+            activeDrones.Add(this);
+    }
+
+    private void OnDisable()
+    {
+        activeDrones.Remove(this);
+    }
+
+    private void Start()
+    {
+        RefreshPlayerTarget();
+    }
+
+    private void FixedUpdate()
+    {
+        if (player == null)
+            RefreshPlayerTarget();
         if (player == null)
             return;
 
-        // Target position: player's position + flying height
-        Vector3 targetPosition = player.position;
-        targetPosition.y += flyingHeight;
-
-        // Distance to player
-        float distance = Vector3.Distance(
-            transform.position,
-            targetPosition
-        );
-
-        // Player too far
-        if (distance > detectionRange)
+        RemoveDestroyedDrones();
+        if (activeDrones.Count == 0)
             return;
 
-        // Move toward player
-        if (distance > attackDistance)
+        float nearestDistance = GetNearestDroneDistance();
+        if (!groupEngaged && nearestDistance <= detectionRange)
         {
-            transform.position = Vector3.MoveTowards(
-                transform.position,
-                targetPosition,
-                moveSpeed * Time.deltaTime
-            );
+            groupEngaged = true;
+            groupEngagementStartTime = Time.time;
         }
+        else if (groupEngaged && nearestDistance > detectionRange * 1.15f)
+        {
+            groupEngaged = false;
+        }
+
+        float cycleLength = turnDuration + pauseBetweenTurns;
+        float elapsed = groupEngaged ? Time.time - groupEngagementStartTime : 0f;
+        int turnNumber = groupEngaged ? Mathf.FloorToInt(elapsed / cycleLength) : -1;
+        bool attackWindow = groupEngaged && elapsed % cycleLength < turnDuration;
+        int activeIndex = attackWindow ? turnNumber % activeDrones.Count : -1;
+        int myIndex = activeDrones.IndexOf(this);
+
+        if (myIndex == activeIndex)
+            ApproachAndAttack(elapsed);
         else
+            ReturnToHover(elapsed, myIndex);
+    }
+
+    private void RefreshPlayerTarget()
+    {
+        playerHealth = FindFirstObjectByType<PlayerHealth>();
+        if (playerHealth != null)
         {
-            AttackPlayer();
+            player = playerHealth.transform;
+            return;
         }
 
-        // Face player
-        Vector3 lookDirection = player.position - transform.position;
+        Camera mainCamera = Camera.main;
+        if (mainCamera != null)
+            player = mainCamera.transform;
+    }
 
-        if (lookDirection.sqrMagnitude > 0.01f)
+    private static void RemoveDestroyedDrones()
+    {
+        for (int i = activeDrones.Count - 1; i >= 0; i--)
         {
-            transform.rotation = Quaternion.LookRotation(
-                lookDirection.normalized
-            );
+            if (activeDrones[i] == null)
+                activeDrones.RemoveAt(i);
         }
     }
 
-    void AttackPlayer()
+    private float GetNearestDroneDistance()
     {
-        if (Time.time < nextAttackTime)
+        float nearest = float.MaxValue;
+        foreach (DroneAI drone in activeDrones)
+        {
+            if (drone != null && drone.player != null)
+                nearest = Mathf.Min(nearest, Vector3.Distance(drone.droneBody.position, player.position));
+        }
+        return nearest;
+    }
+
+    private void ApproachAndAttack(float elapsed)
+    {
+        Vector3 towardPlayer = player.position - droneBody.position;
+        towardPlayer.y = 0f;
+        if (towardPlayer.sqrMagnitude < 0.01f)
+            towardPlayer = Vector3.forward;
+        towardPlayer.Normalize();
+
+        Vector3 side = Vector3.Cross(Vector3.up, towardPlayer).normalized;
+        float buzzPhase = elapsed * 3.2f;
+        Vector3 orbit = side * Mathf.Sin(buzzPhase) * orbitRadius;
+        orbit += towardPlayer * Mathf.Cos(buzzPhase * 0.7f) * (orbitRadius * 0.35f);
+        Vector3 targetPosition = player.position + Vector3.up * flyingHeight + orbit;
+        droneBody.MovePosition(Vector3.MoveTowards(
+            droneBody.position,
+            targetPosition,
+            moveSpeed * Time.fixedDeltaTime));
+
+        FacePlayer();
+
+        if (Vector3.Distance(droneBody.position, targetPosition) <= attackDistance && Time.time >= nextGroupAttackTime)
+        {
+            nextGroupAttackTime = Time.time + attackCooldown;
+            if (playerHealth == null)
+                playerHealth = FindFirstObjectByType<PlayerHealth>();
+            if (playerHealth != null)
+                playerHealth.TakeDamage(damage);
+        }
+    }
+
+    private void ReturnToHover(float elapsed, int index)
+    {
+        float bob = Mathf.Sin(Time.time * 2.2f + Mathf.Max(0, index) * 1.7f) * 0.12f;
+        droneBody.MovePosition(Vector3.MoveTowards(
+            droneBody.position,
+            homePosition + Vector3.up * bob,
+            moveSpeed * Time.fixedDeltaTime));
+        droneBody.MoveRotation(Quaternion.RotateTowards(
+            droneBody.rotation,
+            homeRotation,
+            90f * Time.fixedDeltaTime));
+    }
+
+    private void FacePlayer()
+    {
+        Vector3 lookDirection = player.position - droneBody.position;
+        if (lookDirection.sqrMagnitude < 0.01f)
             return;
 
-        nextAttackTime = Time.time + attackCooldown;
-
-        if (playerHealth != null)
-        {
-            playerHealth.TakeDamage(damage);
-
-            Debug.Log(
-                "DRONE ATTACKED PLAYER! Damage = " + damage
-            );
-        }
+        Quaternion targetRotation = Quaternion.LookRotation(lookDirection, Vector3.up);
+        droneBody.MoveRotation(Quaternion.RotateTowards(
+            droneBody.rotation,
+            targetRotation,
+            360f * Time.fixedDeltaTime));
     }
 }

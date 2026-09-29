@@ -1080,6 +1080,17 @@
                 },
                 {
                     "name": "",
+                    "id": "fd1ced32-2da7-4cce-8150-d80c82b09817",
+                    "path": "<Gamepad>/buttonWest",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Select",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "49a23327-a116-48c0-8af9-0d2c50c15a88",
                     "path": "<XRController>{LeftHand}/{Grip}",
                     "interactions": "",
@@ -2061,7 +2072,7 @@
                     "name": "Activate",
                     "type": "Button",
                     "id": "41976d89-60de-4deb-bff9-16b4af96b290",
-                    "expectedControlType": "Button",
+                    "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false,
@@ -2226,6 +2237,17 @@
                 },
                 {
                     "name": "",
+                    "id": "c5f00df4-28d0-4bb8-b0fb-a7371a09f148",
+                    "path": "<Gamepad>/buttonWest",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Select",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "dd433817-216c-46b9-8dd3-f3a4ea1767b9",
                     "path": "<XRController>{RightHand}/{Grip}",
                     "interactions": "",
@@ -2292,6 +2314,17 @@
                 },
                 {
                     "name": "",
+                    "id": "5e753f04-b30b-429e-8bd4-fce1a1a6fd39",
+                    "path": "<Gamepad>/rightTrigger",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Activate",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "150f414f-61bf-47b1-b4f8-f772a2a40565",
                     "path": "<XRController>{RightHand}/{Trigger}",
                     "interactions": "",
@@ -2338,6 +2371,17 @@
                     "name": "",
                     "id": "f8a900c7-8116-4f44-9d24-8f19caf07108",
                     "path": "<HoloLensHand>{RightHand}/selectPressed",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "UI Press",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "322cd231-3171-45cc-911c-c1e274084f5c",
+                    "path": "<Gamepad>/buttonWest",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
